@@ -100,6 +100,7 @@ MAIN_KUBECONFIG=$KUBECONFIG # may be empty, then default kubeconfig is used
 
 for c in $clusters
 do
+    echo "Rotating service account for cluster $c..."
     kubeconfig=$(curl --insecure -s -u $TOKEN \
         -X POST \
         -H 'Accept: application/json' \
@@ -130,12 +131,22 @@ do
 
     # regenerate service account and secret
     KUBECONFIG=kubeconfigs/${c}.config
-    kubectl --namespace cattle-system delete serviceaccount cattle
-    uid=$(kubectl --namespace cattle-system create serviceaccount cattle --output jsonpath='{.metadata.uid}')
-    create_token_secret cattle $uid
+    if kubectl --namespace cattle-system get serviceaccount kontainer-engine >/dev/null 2>&1
+    then
+        serviceaccount=kontainer-engine
+    elif kubectl --namespace cattle-system get serviceaccount cattle >/dev/null 2>&1
+    then
+        serviceaccount=cattle
+    else
+        echo "could not find admin service account to rotate on cluster $c"
+        exit 1
+    fi
+    kubectl --namespace cattle-system delete serviceaccount $serviceaccount
+    uid=$(kubectl --namespace cattle-system create serviceaccount $serviceaccount --output jsonpath='{.metadata.uid}')
+    create_token_secret $serviceaccount $uid
 
     # restore back to old account
-    token=$(kubectl --namespace cattle-system get secret cattle-token --output jsonpath='{.data.token}')
+    token=$(kubectl --namespace cattle-system get secret $serviceaccount-token --output jsonpath='{.data.token}')
     KUBECONFIG=$MAIN_KUBECONFIG
     secret=$(create_cluster_secret $c $cluster_uid $token)
     kubectl patch clusters.management $c --patch '{"status": {"serviceAccountTokenSecret": "'$secret'"}}' --type=merge
