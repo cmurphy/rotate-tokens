@@ -141,12 +141,19 @@ do
         echo "could not find admin service account to rotate on cluster $c"
         exit 1
     fi
-    kubectl --namespace cattle-system delete serviceaccount $serviceaccount
-    uid=$(kubectl --namespace cattle-system create serviceaccount $serviceaccount --output jsonpath='{.metadata.uid}')
-    create_token_secret $serviceaccount $uid
-
+    if kubectl --namespace cattle-system get secret $serviceaccount-token >/dev/null 2>&1
+    then
+        kubectl --namespace cattle-system delete serviceaccount $serviceaccount
+        uid=$(kubectl --namespace cattle-system create serviceaccount $serviceaccount --output jsonpath='{.metadata.uid}')
+        create_token_secret $serviceaccount $uid
+        tokensecret=$serviceaccount-token
+    else
+        kubectl --namespace cattle-system delete serviceaccount cattle
+        kubectl --namespace cattle-system create serviceaccount cattle
+        tokensecret=$(kubectl --namespace cattle-system get serviceaccount cattle --output jsonpath='{.secrets[0].name}')
+    fi
     # restore back to old account
-    token=$(kubectl --namespace cattle-system get secret $serviceaccount-token --output jsonpath='{.data.token}')
+    token=$(kubectl --namespace cattle-system get secret $tokensecret --output jsonpath='{.data.token}')
     KUBECONFIG=$MAIN_KUBECONFIG
     secret=$(create_cluster_secret $c $cluster_uid $token)
     kubectl patch clusters.management $c --patch '{"status": {"serviceAccountTokenSecret": "'$secret'"}}' --type=merge
