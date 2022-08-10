@@ -1,11 +1,17 @@
 #!/bin/bash -e
 
+if [ -n "$DEBUG" ]
+then
+    set -x
+fi
+
 usage() {
     echo 'TOKEN=<token> KUBECONFIG=</path/to/local/kubeconfig> RANCHER_SERVER=<https://rancher.server> ./rotate-tokens.sh'
     exit 0
 }
 
-if [ "$1" == "help" ] ; then
+if [ "$1" == "help" ]
+then
     usage
 fi
 
