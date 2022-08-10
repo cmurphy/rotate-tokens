@@ -51,6 +51,7 @@ cleanup() {
     kubectl --namespace cattle-system delete serviceaccount cattle-tmp >/dev/null 2>&1 || true
     kubectl --namespace cattle-system delete secret cattle-tmp-token >/dev/null 2>&1 || true
     kubectl delete clusterrolebinding cattle-admin-binding-tmp >/dev/null 2>&1 || true
+    rm -f .error
 }
 
 create_token_secret() {
@@ -110,13 +111,32 @@ do
     echo "$kubeconfig" > kubeconfigs/${c}.config
     KUBECONFIG=kubeconfigs/${c}.config
 
-    # cleanup in case the script was interrupted before
-    cleanup
-
     # create temporary admin account
-    tmpuid=$(kubectl --namespace cattle-system create serviceaccount cattle-tmp --output jsonpath='{.metadata.uid}')
+    tmpuid=$(kubectl --namespace cattle-system create serviceaccount cattle-tmp --output jsonpath='{.metadata.uid}' 2>.error || true)
+    if [ -s .error ]
+    then
+        if grep 'already exists' .error >/dev/null
+        then
+            tmpuid=$(kubectl --namespace cattle-system get serviceaccount cattle-tmp --output jsonpath='{.metadata.uid}')
+        else
+            cat .error
+            rm .error
+            exit 1
+        fi
+        rm .error
+    fi
     create_token_secret cattle-tmp $tmpuid
-    kubectl create clusterrolebinding --clusterrole cattle-admin --serviceaccount cattle-system:cattle-tmp cattle-admin-binding-tmp
+    kubectl create clusterrolebinding --clusterrole cattle-admin --serviceaccount cattle-system:cattle-tmp cattle-admin-binding-tmp 2>.error || true
+    if [ -s .error ]
+    then
+        if ! grep 'already exists' .error >/dev/null
+        then
+            cat .error
+            rm .error
+            exit 1
+        fi
+        rm .error
+    fi
     token=$(kubectl --namespace cattle-system get secret cattle-tmp-token --output jsonpath='{.data.token}')
     kubectl --namespace cattle-system patch deployment cattle-cluster-agent --patch '{"spec": {"template": {"spec": {"serviceAccount": "cattle-tmp", "serviceAccountName": "cattle-tmp"}}}}'
     kubectl --namespace cattle-system rollout status deployment cattle-cluster-agent
