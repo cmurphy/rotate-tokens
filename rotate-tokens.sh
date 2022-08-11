@@ -167,16 +167,18 @@ do
         echo "could not find admin service account to rotate on cluster $c"
         exit 1
     fi
+    # 2.6 creates its own token
     if kubectl --namespace cattle-system get secret $serviceaccount-token >/dev/null 2>&1
     then
         kubectl --namespace cattle-system delete serviceaccount $serviceaccount
         uid=$(kubectl --namespace cattle-system create serviceaccount $serviceaccount --output jsonpath='{.metadata.uid}')
         create_token_secret $serviceaccount $uid
         tokensecret=$serviceaccount-token
+    # 2.5 uses the k8s-generated token
     else
-        kubectl --namespace cattle-system delete serviceaccount cattle
-        kubectl --namespace cattle-system create serviceaccount cattle
-        tokensecret=$(kubectl --namespace cattle-system get serviceaccount cattle --output jsonpath='{.secrets[0].name}')
+        kubectl --namespace cattle-system delete serviceaccount $serviceaccount
+        kubectl --namespace cattle-system create serviceaccount $serviceaccount
+        tokensecret=$(kubectl --namespace cattle-system get serviceaccount $serviceaccount --output jsonpath='{.secrets[0].name}')
     fi
     # restore back to old account
     token=$(kubectl --namespace cattle-system get secret $tokensecret --output jsonpath='{.data.token}')
